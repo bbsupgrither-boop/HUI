@@ -59,6 +59,14 @@ function verifyTgInitData(initData, botToken) {
   const ok = crypto.timingSafeEqual(Buffer.from(calcHash, "hex"), Buffer.from(hash, "hex"));
   return { ok, data };
 }
+// Парсим initData БЕЗ проверки подписи (для диагностики)
+function parseInitDataUnchecked(initData) {
+  const pairs = initData.split("&").map(p => p.split("="));
+  const data = Object.fromEntries(
+    pairs.map(([k, v]) => [k, decodeURIComponent(v || "")])
+  );
+  return data;
+}
 
 app.post("/api/twa/auth", (req, res) => {
   try {
