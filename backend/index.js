@@ -5,8 +5,33 @@ import crypto from "node:crypto";
 import { bot, webhookCallback } from "./src/bot.js";
 import { router as api } from "./src/routes.js";
 import { addon as addonRoutes } from "./src/routes.addon.js";
+import cors from "cors";
 
 const app = express();
+
+// ===== CORS (белый список) =====
+const allowlist = [
+  ...(process.env.FRONTEND_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+  'https://bright-tiramisu-4df5d7.netlify.app', // твой фронт
+  'http://localhost:5173',                      // на будущее — локалка
+];
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // curl/сервер-сервер
+    if (allowlist.some(a => origin.startsWith(a))) return cb(null, true);
+    return cb(new Error('Not allowed by CORS: ' + origin));
+  },
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // корректный ответ на preflight
+// ================================
+
 
 /* ===================== Глобальные ловушки ошибок ===================== */
 process.on("unhandledRejection", (e) =>
