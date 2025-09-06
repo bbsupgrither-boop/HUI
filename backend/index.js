@@ -5,15 +5,25 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
 
-// === ВРЕМЕННЫЙ ПРОСТОЙ CORS, ЧТОБЫ ПРОВЕРИТЬ ===
+// === CORS с белым списком доменов ===
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); // <-- временно на время проверки
+  const allowed = [
+    'https://bright-tiramisu-4df5d7.netlify.app', // <-- твой текущий фронт
+    'http://localhost:5173'                        // для локальной разработки
+  ];
+
+  const origin = req.headers.origin;
+  if (origin && allowed.some(a => origin.startsWith(a))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
-// ================================================
+// =====================================
+
 
 
 // ==== CORS: разрешаем запросы с твоего фронта на Netlify ====
