@@ -43,7 +43,9 @@ app.use(express.json());
 // --- Проверка подписи Telegram WebApp ---
 function verifyTgInitData(initData, botToken) {
   const pairs = initData.split("&").map(p => p.split("="));
-  const data = Object.fromEntries(pairs.map(([k, v]) => [k, decodeURIComponent(v)]));
+  const data = Object.fromEntries(
+    pairs.map(([k, v]) => [k, decodeURIComponent(v || "")])
+  );
 
   const hash = data.hash;
   delete data.hash;
@@ -53,12 +55,16 @@ function verifyTgInitData(initData, botToken) {
     .map(k => `${k}=${data[k]}`)
     .join("\n");
 
-  const secretKey = crypto.createHmac("sha256", "WebAppData").update(process.env.BOT_TOKEN || botToken).digest();
+  // Делаем ключ безопасным даже если токена нет
+  const token = (process.env.BOT_TOKEN || botToken || "");
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(token).digest();
   const calcHash = crypto.createHmac("sha256", secretKey).update(checkString).digest("hex");
 
-  const ok = crypto.timingSafeEqual(Buffer.from(calcHash, "hex"), Buffer.from(hash, "hex"));
+  // Если hash пуст — явно провалим проверку, но без исключений
+  const ok = !!hash && crypto.timingSafeEqual(Buffer.from(calcHash, "hex"), Buffer.from(hash, "hex"));
   return { ok, data };
 }
+
 // Парсим initData БЕЗ проверки подписи (для диагностики)
 function parseInitDataUnchecked(initData) {
   const pairs = initData.split("&").map(p => p.split("="));
@@ -82,15 +88,19 @@ app.post("/api/twa/auth", (req, res) => {
       return res.status(400).json({ ok: false, error: "no initData" });
     }
 
-    const { ok, data } = verifyTgInitData(initData, process.env.BOT_TOKEN);
-
     const skipVerify = process.env.SKIP_TWA_VERIFY === "1";
-    if (!ok && !skipVerify) {
-      console.warn("[auth] bad signature (BOT_TOKEN mismatch or not WebApp)");
-      return res.status(401).json({ ok: false, error: "bad signature" });
-    }
-    if (!ok && skipVerify) {
-      console.warn("[auth] signature failed, but SKIPPED (diag mode)");
+
+    let data;
+    if (skipVerify) {
+      console.warn("[auth] signature check SKIPPED (diag mode)");
+      data = parseInitDataUnchecked(initData);
+    } else {
+      const v = verifyTgInitData(initData, process.env.BOT_TOKEN);
+      if (!v.ok) {
+        console.warn("[auth] bad signature (check BOT_TOKEN and open via bot WebApp)");
+        return res.status(401).json({ ok: false, error: "bad signature" });
+      }
+      data = v.data;
     }
 
     if (!data?.user) {
@@ -109,8 +119,31 @@ app.post("/api/twa/auth", (req, res) => {
     console.log("[auth ok*]", {
       id: tgUser?.id || null,
       username: tgUser?.username || null,
-      first_name: tgUser?.first_name || null
+      first_name: tgUser?.first_name || null,
     });
+
+    const authPayload = {
+      id: tgUser?.id || null,
+      username: tgUser?.username || null,
+      ts: Date.now(),
+    };
+    const secret = process.env.WEBHOOK_SECRET || "devsecret";
+    const sig = crypto.createHmac("sha256", secret)
+      .update(JSON.stringify(authPayload))
+      .digest("hex");
+    const token = `${sig}.${Buffer.from(JSON.stringify(authPayload)).toString("base64url")}`;
+
+    return res.json({
+      ok: true,
+      me: { id: tgUser?.id || null, name: tgUser?.first_name || null, username: tgUser?.username || null },
+      token,
+    });
+  } catch (e) {
+    console.error("auth error", e);
+    return res.status(500).json({ ok: false, error: "server" });
+  }
+});
+
 
     const authPayload = { id: tgUser?.id || null, username: tgUser?.username || null, ts: Date.now() };
     const secret = process.env.WEBHOOK_SECRET || "devsecret";
