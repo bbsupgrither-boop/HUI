@@ -43,6 +43,23 @@ app.post('/api/twa/auth', async (req, res) => {
     const user = JSON.parse(data.user) // строка JSON от Telegram
     // здесь — сохранить/обновить пользователя в БД (Supabase) и запись в логи
     // …(ниже дам простой вариант без БД)
+const user = JSON.parse(data.user);
+console.log('[auth ok]', user.id, user.username || null, user.first_name || null);
+
+// было: const payload = { ... }  <-- из-за этого конфликт
+const authPayload = { id: user.id, username: user.username || null, ts: Date.now() };
+const secret = process.env.WEBHOOK_SECRET || 'devsecret';
+const sig = crypto.createHmac('sha256', secret)
+  .update(JSON.stringify(authPayload))
+  .digest('hex');
+
+const token = `${sig}.${Buffer.from(JSON.stringify(authPayload)).toString('base64url')}`;
+
+return res.json({
+  ok: true,
+  me: { id: user.id, name: user.first_name, username: user.username || null },
+  token
+});
 
     // ... после: const user = JSON.parse(data.user);
 
