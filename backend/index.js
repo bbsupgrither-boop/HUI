@@ -5,6 +5,17 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
 
+// === ВРЕМЕННЫЙ ПРОСТОЙ CORS, ЧТОБЫ ПРОВЕРИТЬ ===
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*'); // <-- временно на время проверки
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+// ================================================
+
+
 // ==== CORS: разрешаем запросы с твоего фронта на Netlify ====
 app.use((req, res, next) => {
   const allowed = [
