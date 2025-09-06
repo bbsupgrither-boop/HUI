@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { HomePage } from './components/HomePage';
-import { useTelegram } from './src/utils/telegram'; // ✅ правильный путь (без ./src/)
+import { useTelegram } from './utils/telegram'; // ✅ правильный путь (без ./src/)
 import { AchievementsPage } from './components/AchievementsPageFixed';
 import { TasksPage } from './components/TasksPage';
 import { CasesPage } from './components/CasesPage';
