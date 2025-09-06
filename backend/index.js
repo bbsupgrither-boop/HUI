@@ -44,6 +44,33 @@ app.post('/api/twa/auth', async (req, res) => {
     // здесь — сохранить/обновить пользователя в БД (Supabase) и запись в логи
     // …(ниже дам простой вариант без БД)
 
+    // ... после: const user = JSON.parse(data.user);
+
+// ЯВНЫЙ ЛОГ: кто авторизуется
+console.log('[auth ok]', user.id, user.username || null, user.first_name || null);
+
+// формирование token как у тебя
+const payload = { id: user.id, username: user.username || null, ts: Date.now() };
+const secret = process.env.WEBHOOK_SECRET || 'devsecret';
+const sig = crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+const token = `${sig}.${Buffer.from(JSON.stringify(payload)).toString('base64url')}`;
+
+return res.json({ ok: true, me: { id: user.id, name: user.first_name, username: user.username || null }, token });
+
+    app.get('/api/whoami', (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    const token = auth.replace('Bearer ', '');
+    const [sig, b64] = token.split('.');
+    if (!sig || !b64) return res.status(401).json({ ok: false, error: 'no token' });
+    const payload = JSON.parse(Buffer.from(b64, 'base64url').toString());
+    return res.json({ ok: true, payload });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: 'bad token' });
+  }
+});
+
+
     // ЛЁГКИЙ ВАРИАНТ: “сессия” через подписанный токен на стороне сервера
     const payload = { id:user.id, username:user.username || null, ts:Date.now() }
     const jwt = crypto
