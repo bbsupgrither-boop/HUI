@@ -51,43 +51,57 @@ app.use((req, res, next) => {
 
 // ───────────────────────────────────────────────────────────
 // CORS — ставим до роутов и до json-парсера
-const baseAllowlist = [
-  FRONTEND_ORIGIN,
-  ...String(FRONTEND_ORIGINS).split(',').map(s => s.trim()).filter(Boolean),
-  'http://localhost:5173', // локальная разработка
-].filter(Boolean)
+const RAW_ORIGIN = process.env.FRONTEND_ORIGIN || ''
+const EXTRA = String(process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
 
-// Поддержка превью-деплоев Netlify: https://<hash>--<site>.netlify.app
-let netlifyPreviewRegex = null
+// базовый вайтлист + локалка
+const allowlist = [RAW_ORIGIN, ...EXTRA, 'http://localhost:5173'].filter(Boolean)
+
+// Построим regex для Netlify preview на основе FRONTEND_ORIGIN
+let previewRegex = null
 try {
-  const firstNetlify = baseAllowlist.find(x => x.includes('.netlify.app'))
-  if (firstNetlify) {
-    const u = new URL(firstNetlify)
+  if (RAW_ORIGIN) {
+    const u = new URL(RAW_ORIGIN) // напр. https://bright-tiramisu-4df5d7.netlify.app
     if (u.host.endsWith('.netlify.app')) {
+      // https://<hash>--<site>.netlify.app
       const siteHost = u.host.replace('.', '\\.')
-      netlifyPreviewRegex = new RegExp(`^https:\\/\\/[a-z0-9-]+--${siteHost}$`)
+      previewRegex = new RegExp(`^https:\\/\\/[a-z0-9-]+--${siteHost}$`)
     }
   }
-} catch {}
+} catch (_) {}
 
-console.log('[cors] allowlist:', baseAllowlist, 'previewRegex:', !!netlifyPreviewRegex)
+console.log('[cors] allowlist =', allowlist, 'previewRegex =', !!previewRegex)
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true) // curl/сервер-сервер
-    if (baseAllowlist.some(a => origin === a || origin.startsWith(a))) {
+    // Сервер-сервер/ curl / Telegram — без Origin
+    if (!origin) return cb(null, true)
+
+    // Точное совпадение или начинается с (на случай разных схем/портов)
+    if (allowlist.some(a => origin === a || origin.startsWith(a))) {
       return cb(null, true)
     }
-    if (netlifyPreviewRegex && netlifyPreviewRegex.test(origin)) {
+
+    // Netlify preview: https://<hash>--<site>.netlify.app
+    if (previewRegex && previewRegex.test(origin)) {
       return cb(null, true)
     }
+
+    // На всякий — если очень нужно пустить все *.netlify.app:
+    // if (origin.endsWith('.netlify.app')) return cb(null, true)
+
     return cb(new Error('Not allowed by CORS'))
   },
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization'],
+  credentials: false,
   optionsSuccessStatus: 204,
 }))
 app.options('*', cors())
+
 
 // JSON парсер
 app.use(express.json())
