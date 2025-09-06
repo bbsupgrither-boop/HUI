@@ -5,6 +5,26 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
 
+// сразу после app = express()
+const allowed = (process.env.FRONTEND_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean)
+  .concat(['http://localhost:5173']); // для локали
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowed.some(a => origin.startsWith(a))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+
 // === CORS с белым списком доменов ===
 app.use((req, res, next) => {
   const allowed = [
