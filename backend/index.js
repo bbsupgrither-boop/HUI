@@ -63,32 +63,39 @@ function verifyTgInitData(initData, botToken) {
 app.post("/api/twa/auth", (req, res) => {
   try {
     const initData = req.body?.initData;
-    console.log("[auth hit]", {
-      hasInitData: !!initData,
+    console.log("[auth HIT]", {
+      hasBody: !!req.body,
       len: initData ? initData.length : 0,
       origin: req.headers.origin || null,
-      ua: req.headers["user-agent"] || null
     });
 
-    if (!initData) return res.status(400).json({ ok: false, error: "no initData" });
+    if (!initData) {
+      console.warn("[auth] no initData in body");
+      return res.status(400).json({ ok: false, error: "no initData" });
+    }
 
     const { ok, data } = verifyTgInitData(initData, process.env.BOT_TOKEN);
 
-    // Если подпись не проходит, но включён диагностический режим — пойдём дальше, но с предупреждением.
     const skipVerify = process.env.SKIP_TWA_VERIFY === "1";
     if (!ok && !skipVerify) {
-      console.warn("[auth fail] bad signature. Проверь BOT_TOKEN и что WebApp открыт из ЭТОГО бота.");
+      console.warn("[auth] bad signature (BOT_TOKEN mismatch or not WebApp)");
       return res.status(401).json({ ok: false, error: "bad signature" });
     }
     if (!ok && skipVerify) {
-      console.warn("[auth warn] signature failed BUT SKIPPED (SKIP_TWA_VERIFY=1). Используй ТОЛЬКО для диагностики!");
+      console.warn("[auth] signature failed, but SKIPPED (diag mode)");
+    }
+
+    if (!data?.user) {
+      console.warn("[auth] initData.user missing");
+      return res.status(400).json({ ok: false, error: "bad initData: no user" });
     }
 
     let tgUser = null;
     try {
       tgUser = JSON.parse(data.user);
     } catch (e) {
-      console.warn("[auth warn] data.user parse failed:", e?.message);
+      console.warn("[auth] cannot parse data.user:", e?.message);
+      return res.status(400).json({ ok: false, error: "bad initData: invalid user json" });
     }
 
     console.log("[auth ok*]", {
@@ -112,6 +119,7 @@ app.post("/api/twa/auth", (req, res) => {
     return res.status(500).json({ ok: false, error: "server" });
   }
 });
+
 
 // Посмотреть важные ENV, но безопасно (без токенов целиком)
 app.get("/api/debug/env", (req, res) => {
