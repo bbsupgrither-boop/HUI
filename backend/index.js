@@ -1,18 +1,39 @@
 import express from "express";
 import { bot, webhookCallback } from "./src/bot.js";
 import { router as api } from "./src/routes.js";
+import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
+
+// JSON-парсер — оставить до вебхука
 app.use(express.json());
 
+// === ВЕБХУК TELEGRAM ===
+// Берём секрет из переменных (у тебя "GRITHER")
 const secret = process.env.WEBHOOK_SECRET || "hook";
-app.post(`/tg/${secret}`, webhookCallback);
+
+// Лог на каждый входящий запрос к вебхуку (для диагностики)
+app.use(`/tg/${secret}`, (req, res, next) => {
+  console.log("[webhook] hit", {
+    method: req.method,
+    url: req.originalUrl,
+    len: req.headers["content-length"] || "0",
+  });
+  next();
+});
+
+// Разрешим любой метод (GET/POST/…) и отдаём простую 200 на GET,
+// чтобы Телега не считала это ошибкой:
+app.get(`/tg/${secret}`, (req, res) => res.status(200).send("OK"));
+
+// Основной обработчик от Telegraf (универсальный)
+app.use(`/tg/${secret}`, webhookCallback);
+
+// === ТВОИ API ===
 app.use("/api", api);
+app.use("/api", addonRoutes);
 
-import { addon as addonRoutes } from './src/routes.addon.js';
-app.use('/api', addonRoutes);
-
-
+// === СТАРТ ===
 const port = process.env.PORT || 3000;
 app.listen(port, async () => {
   console.log("[server] listening on", port);
