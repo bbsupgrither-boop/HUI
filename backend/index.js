@@ -8,6 +8,16 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 // --- app ---
 const app = express();
 
+// ГЛОБАЛЬНЫЙ ЛОГГЕР ВСЕХ ЗАПРОСОВ (ставим самым первым)
+app.use((req, res, next) => {
+  try {
+    const o = req.headers.origin || '';
+    console.log('[hit]', new Date().toISOString(), req.method, req.url, o ? `origin=${o}` : '');
+  } catch {}
+  next();
+});
+
+
 // --- CORS (до любых роутов) ---
 const allowedOrigins = (process.env.FRONTEND_ORIGINS || "")
   .split(",")
