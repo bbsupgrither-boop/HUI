@@ -31,7 +31,14 @@ bot.on("text", async (ctx, next) => {
 
 // === СТАРТ ===
 bot.start(async (ctx) => {
-  await ctx.reply("Привет! Я рабочий бот. Напиши /help");
+  const webAppUrl = 'https://bright-tiramisu-4df5d7.netlify.app/?v=5';
+  await ctx.reply('Открыть приложение 👇', {
+    reply_markup: {
+      keyboard: [[{ text: 'Открыть GRITHER', web_app: { url: webAppUrl } }]],
+      resize_keyboard: true,
+      one_time_keyboard: true
+    }
+  });
 });
 
 // === ПОМОЩЬ ===
