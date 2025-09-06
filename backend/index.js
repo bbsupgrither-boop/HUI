@@ -5,6 +5,14 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
 
+app.post('/api/twa/seen', (req, res) => {
+  const user = req.body?.user;
+  console.log('[twa] user seen:', user?.id, user?.username);
+  res.json({ ok: true });
+});
+
+
+
 // сразу после app = express()
 const allowed = (process.env.FRONTEND_ORIGINS || '')
   .split(',')
