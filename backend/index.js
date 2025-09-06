@@ -50,27 +50,51 @@ function verifyTgInitData(initData, botToken) {
   return { ok, data };
 }
 
-// --- Auth WebApp: POST /api/twa/auth ---
 app.post("/api/twa/auth", (req, res) => {
   try {
-    const { initData } = req.body || {};
+    const initData = req.body?.initData;
+    console.log("[auth hit]", {
+      hasInitData: !!initData,
+      len: initData ? initData.length : 0,
+      origin: req.headers.origin || null,
+      ua: req.headers["user-agent"] || null
+    });
+
     if (!initData) return res.status(400).json({ ok: false, error: "no initData" });
 
     const { ok, data } = verifyTgInitData(initData, process.env.BOT_TOKEN);
-    if (!ok) return res.status(401).json({ ok: false, error: "bad signature" });
 
-    const tgUser = JSON.parse(data.user); // user приходит строкой JSON
-    console.log("[auth ok]", tgUser.id, tgUser.username || null, tgUser.first_name || null);
+    // Если подпись не проходит, но включён диагностический режим — пойдём дальше, но с предупреждением.
+    const skipVerify = process.env.SKIP_TWA_VERIFY === "1";
+    if (!ok && !skipVerify) {
+      console.warn("[auth fail] bad signature. Проверь BOT_TOKEN и что WebApp открыт из ЭТОГО бота.");
+      return res.status(401).json({ ok: false, error: "bad signature" });
+    }
+    if (!ok && skipVerify) {
+      console.warn("[auth warn] signature failed BUT SKIPPED (SKIP_TWA_VERIFY=1). Используй ТОЛЬКО для диагностики!");
+    }
 
-    // Лёгкий "токен" (HMAC + payload в base64url)
-    const authPayload = { id: tgUser.id, username: tgUser.username || null, ts: Date.now() };
+    let tgUser = null;
+    try {
+      tgUser = JSON.parse(data.user);
+    } catch (e) {
+      console.warn("[auth warn] data.user parse failed:", e?.message);
+    }
+
+    console.log("[auth ok*]", {
+      id: tgUser?.id || null,
+      username: tgUser?.username || null,
+      first_name: tgUser?.first_name || null
+    });
+
+    const authPayload = { id: tgUser?.id || null, username: tgUser?.username || null, ts: Date.now() };
     const secret = process.env.WEBHOOK_SECRET || "devsecret";
     const sig = crypto.createHmac("sha256", secret).update(JSON.stringify(authPayload)).digest("hex");
     const token = `${sig}.${Buffer.from(JSON.stringify(authPayload)).toString("base64url")}`;
 
     return res.json({
       ok: true,
-      me: { id: tgUser.id, name: tgUser.first_name, username: tgUser.username || null },
+      me: { id: tgUser?.id || null, name: tgUser?.first_name || null, username: tgUser?.username || null },
       token
     });
   } catch (e) {
@@ -78,6 +102,23 @@ app.post("/api/twa/auth", (req, res) => {
     return res.status(500).json({ ok: false, error: "server" });
   }
 });
+
+// Посмотреть важные ENV, но безопасно (без токенов целиком)
+app.get("/api/debug/env", (req, res) => {
+  const botToken = process.env.BOT_TOKEN || "";
+  res.json({
+    ok: true,
+    hasBotToken: !!botToken,
+    botTokenPrefix: botToken ? botToken.slice(0, 10) : null,
+    appUrl: process.env.APP_URL || null,
+    origins: process.env.FRONTEND_ORIGINS || null,
+    skipVerify: process.env.SKIP_TWA_VERIFY === "1"
+  });
+});
+
+app.get("/api/twa/ping", (req, res) => res.json({ ok: true, path: "/api/twa/auth alive" }));
+
+
 
 // --- Кто я по токену: GET /api/whoami ---
 app.get("/api/whoami", (req, res) => {
