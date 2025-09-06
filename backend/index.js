@@ -5,6 +5,60 @@ import { addon as addonRoutes } from "./src/routes.addon.js";
 
 const app = express();
 
+import crypto from 'node:crypto'
+
+// ПАРСЕР JSON (если ещё не стоит)
+app.use(express.json())
+
+// ВАЛИДАЦИЯ initData от Telegram Web App
+function verifyTgInitData(initData, botToken) {
+  // разбор querystring в объект
+  const pairs = initData.split('&').map(p => p.split('='))
+  const data = Object.fromEntries(pairs.map(([k,v]) => [k, decodeURIComponent(v)]))
+
+  const hash = data.hash
+  delete data.hash
+
+  const checkString = Object.keys(data)
+    .sort()
+    .map(k => `${k}=${data[k]}`)
+    .join('\n')
+
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest()
+  const calcHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex')
+
+  const ok = crypto.timingSafeEqual(Buffer.from(calcHash, 'hex'), Buffer.from(hash, 'hex'))
+  return { ok, data }
+}
+
+// POST /api/twa/auth  { initData: window.Telegram.WebApp.initData }
+app.post('/api/twa/auth', async (req, res) => {
+  try {
+    const { initData } = req.body || {}
+    if (!initData) return res.status(400).json({ ok:false, error:'no initData' })
+
+    const { ok, data } = verifyTgInitData(initData, process.env.BOT_TOKEN)
+    if (!ok) return res.status(401).json({ ok:false, error:'bad signature' })
+
+    const user = JSON.parse(data.user) // строка JSON от Telegram
+    // здесь — сохранить/обновить пользователя в БД (Supabase) и запись в логи
+    // …(ниже дам простой вариант без БД)
+
+    // ЛЁГКИЙ ВАРИАНТ: “сессия” через подписанный токен на стороне сервера
+    const payload = { id:user.id, username:user.username || null, ts:Date.now() }
+    const jwt = crypto
+      .createHmac('sha256', process.env.WEBHOOK_SECRET || 'devsecret')
+      .update(JSON.stringify(payload))
+      .digest('hex') + '.' + Buffer.from(JSON.stringify(payload)).toString('base64url')
+
+    res.json({ ok:true, me: { id:user.id, name: user.first_name, username: user.username || null }, token: jwt })
+  } catch (e) {
+    console.error('auth error', e)
+    res.status(500).json({ ok:false, error:'server' })
+  }
+})
+
+
 app.post('/api/twa/seen', (req, res) => {
   const user = req.body?.user;
   console.log('[twa] user seen:', user?.id, user?.username);
