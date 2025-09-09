@@ -198,6 +198,35 @@ app.post('/api/twa/auth', async (req, res) => {
       username: user.username || null,
       first_name: user.first_name || null
     })
+    // — после: const user = JSON.parse(verified.data.user || '{}')
+try {
+  await supa
+    .from('users')
+    .upsert({
+      id: user.id,                        // BIGINT PK
+      username: user.username || null,
+      first_name: user.first_name || null,
+      last_name: user.last_name || null,
+      photo_url: user.photo_url || null,
+      last_seen: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' });
+
+  // Не обязательно, но полезно — первичный "open" лог:
+  await supa
+    .from('logs')
+    .insert({
+      user_id: user.id,
+      type: 'auth',
+      message: 'webapp auth ok',
+      extra: { via: 'twa' }
+    });
+
+  console.log('[supabase] users upsert + auth log ok');
+} catch (e) {
+  console.warn('[supabase] users upsert/log failed', e.message);
+}
+
 
     // здесь можно сохранить/обновить пользователя в БД
 
