@@ -51,6 +51,35 @@ if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
 }
 
 // ───────────────────────────────────────────────────────────
+// DIAG: проверить вставку в БД напрямую (без фронта/токена)
+app.post('/api/diag/db', async (req, res) => {
+  try {
+    if (!supa) {
+      return res.status(500).json({ ok: false, error: 'supa not inited' })
+    }
+    const testUserId = 6020903159  // можешь подставить свой Telegram id
+    const { error } = await supa
+      .from('logs')
+      .insert({
+        user_id: testUserId,
+        type: 'diag',
+        message: 'railway direct insert',
+        extra: { source: 'diag-endpoint' },
+      })
+
+    if (error) {
+      console.warn('[diag/db insert failed]', error.message)
+      return res.status(500).json({ ok: false, error: error.message })
+    }
+    console.log('[diag/db inserted] ok for', testUserId)
+    return res.json({ ok: true })
+  } catch (e) {
+    console.error('[diag/db error]', e)
+    return res.status(500).json({ ok: false, error: 'server' })
+  }
+})
+
+// ───────────────────────────────────────────────────────────
 // App
 const app = express();
 
