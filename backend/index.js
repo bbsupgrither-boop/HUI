@@ -107,34 +107,53 @@ app.use((req, res, next) => {
 app.use(express.json())
 
 // CORS: белый список + превью Netlify
-const allowlist = FRONTEND_ORIGINS.split(',')
+const allowlist = (FRONTEND_ORIGINS || '')
+  .split(',')
   .map(s => s.trim())
-  .filter(Boolean)
+  .filter(Boolean);
 
-// локальная разработка всегда разрешена
-if (!allowlist.includes('http://localhost:5173')) allowlist.push('http://localhost:5173')
+// всегда разрешаем локалку
+if (!allowlist.includes('http://localhost:5173')) {
+  allowlist.push('http://localhost:5173');
+}
 
-// превью-домены Netlify для основного сайта (https://<preview>--SITE.netlify.app)
-const previewRegexes = allowlist
-  .filter(o => /^https?:\/\/[^/]+\.netlify\.app$/.test(o))
-  .map(o => {
-    const host = o.replace(/^https?:\/\//, '')
-    return new RegExp(`^https://[a-z0-9-]+--${host.replace(/\./g, '\\.')}$`)
-  })
+// если среди allowlist есть прод-домен Netlify — построим regex и для превью-деплоев
+const previewRegexes = [];
+for (const o of allowlist) {
+  // прод домен формата https://example.netlify.app
+  if (/^https?:\/\/[^/]+\.netlify\.app$/.test(o)) {
+    const host = o.replace(/^https?:\/\//, '');
+    // разрешаем https://<anything>--HOST
+    previewRegexes.push(new RegExp(`^https://[a-z0-9-]+--${host.replace(/\./g, '\\.')}$`));
+  }
+}
 
-console.log('[cors] allowlist =', allowlist, 'previewRegex =', previewRegexes.length > 0)
+console.log('[cors] allowlist =', allowlist, 'previewRegex =', previewRegexes.length > 0);
 
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true) // curl/server-to-server
-    if (allowlist.some(a => origin.startsWith(a))) return cb(null, true)
-    if (previewRegexes.some(rx => rx.test(origin))) return cb(null, true)
-    return cb(new Error('Not allowed by CORS'))
+    if (!origin) return cb(null, true); // curl/server-to-server
+
+    // точное совпадение или startsWith (на случай, если в env без протокола)
+    const inList = allowlist.some(a =>
+      origin === a ||
+      origin.startsWith(a) ||
+      // на всякий случай поддержим вариант без схемы в env (example.netlify.app)
+      (!a.startsWith('http') && origin.endsWith(a))
+    );
+
+    const isPreview = previewRegexes.some(rx => rx.test(origin));
+
+    if (inList || isPreview) return cb(null, true);
+
+    console.warn('[cors] blocked origin:', origin, 'allowlist=', allowlist);
+    return cb(new Error('Not allowed by CORS'));
   },
   methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type','Authorization'],
-}))
-app.options('*', cors())
+  credentials: false,
+}));
+app.options('*', cors());
 
 // ───────────────────────────────────────────────────────────
 // Health / Diagnostics
