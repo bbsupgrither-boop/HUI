@@ -143,41 +143,42 @@ app.options('*', cors());
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 // ТЕСТОВЫЙ эндпоинт для проверки записи в Supabase
-app.post('/api/diag/db', async (req, res) => {
+app.post('/api/logs', async (req, res) => {
   try {
-    if (!supa) {
-      return res.status(500).json({ ok: false, error: 'supa client is not configured' });
-    }
-    // добавили level с дефолтом 'info'
-    const {
-      type = 'diag',
-      message = 'manual test',
-      extra = null,
-      level = 'info',
-    } = req.body || {};
+    const auth = req.headers.authorization || '';
+    const token = auth.replace(/^Bearer\s+/i, '');
+    const payload = verifySignedToken(token);
+    if (!payload) return res.status(401).json({ ok: false, error: 'bad token' });
 
+    const { type, message = null, extra = null } = req.body || {};
+    const level = (req.body && req.body.level) ? String(req.body.level) : 'info'; // <— ВАЖНО
+
+    console.log('[log]', payload.id, type, message, extra);
+
+    if (supa) {
+   try {
     const { error } = await supa
       .from('logs')
       .insert({
-        user_id: 0,
-        type,
-        message,
-        extra,
-        level,      // <-- ВАЖНО: теперь пишем level
+        user_id: user.id,
+        type: 'auth',
+        message: 'webapp auth ok',
+        level: 'info',
+        extra: { username: user.username || null },
       });
-
-    if (error) {
-      console.warn('[diag/db failed]', error.message);
-      return res.status(500).json({ ok: false, error: error.message });
-    }
-    console.log('[diag/db] inserted test row (type=%s, level=%s)', type, level);
-    return res.json({ ok: true, inserted: true });
+    if (error) console.warn('[auth->db failed]', error.message);
+    else console.log('[auth->db] inserted for', user.id);
   } catch (e) {
-    console.error('[diag/db error]', e);
+    console.warn('[auth->db failed]', e.message);
+  }
+}
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('log error', e);
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
-
 
 
 app.get('/api/twa/ping', (req, res) => {
