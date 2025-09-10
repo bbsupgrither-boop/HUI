@@ -264,15 +264,15 @@ try {
   await supa
     .from('logs')
     .insert({
-      user_id: payload.id,
-      type,
-      message,
-      extra,
-      level,           // <-- добавили
+      user_id: user.id,
+      type: 'auth',
+      message: 'auth ok',
+      extra: { username: user.username || null },
+      level: 'info',            // <-- ВАЖНО: добавили уровень
     });
-  console.log('[log->db]', payload.id, type, message, level);
+  console.log('[auth->db] inserted for', user.id);
 } catch (e) {
-  console.warn('[log->db failed]', e.message);
+  console.warn('[auth->db failed]', e.message);
 }
     console.log('[log]', payload.id, type, message, extra)
 
