@@ -1,11 +1,10 @@
-// index.js — PROD
+// index.js — prod (ESM)
 
 import express from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
 
-// ваши модули
+// твои модули
 import { bot, webhookCallback } from './src/bot.js';
 import { router as api } from './src/routes.js';
 import { addon as addonRoutes } from './src/routes.addon.js';
@@ -16,33 +15,90 @@ const {
   BOT_TOKEN,
   WEBHOOK_SECRET = 'hook',
   APP_URL,
-  FRONTEND_ORIGINS = '',
   PORT = 3000,
-  SKIP_TWA_VERIFY,
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
 } = process.env;
 
+// имена переменных для фронта: поддержим оба
+const FRONTEND_ORIGIN =
+  process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS || '';
+
+// Supabase: поддержим оба имени ключа
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_KEY || '';
+
+// безопасный флаг для диагностики
+const SKIP_TWA_VERIFY = process.env.SKIP_TWA_VERIFY;
+
+// ───────────────────────────────────────────────────────────
 if (!BOT_TOKEN) {
   console.error('[FATAL] BOT_TOKEN is required');
   process.exit(1);
 }
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn('[WARN] Supabase vars are not set — /api/logs will skip DB insert');
+
+// Опционально: подключим Supabase (если заданы обе переменные)
+let supabase = null;
+if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+  // динамический импорт, чтобы не падать без пакета
+  const { createClient } = await import('@supabase/supabase-js');
+  supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+    auth: { persistSession: false },
+  });
+} else {
+  console.warn(
+    '[WARN] Supabase vars are not set — /api/logs will skip DB insert'
+  );
 }
 
-// Supabase клиент (безопасно: используем сервис анонимный ключ только для INSERT по публичной политике)
-const supa = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+// ───────────────────────────────────────────────────────────
+// App
+const app = express();
+
+// Общий лог входящих запросов
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '-';
+  console.log(
+    `[hit] ${new Date().toISOString()} ${req.method} ${req.originalUrl} origin=${origin}`
+  );
+  next();
+});
+
+// JSON парсер до роутов
+app.use(express.json());
+
+// CORS allowlist
+const allowlist = FRONTEND_ORIGIN.split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .concat(['http://localhost:5173']);
+
+const previewRegex =
+  /https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app$/i;
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // curl/сервер-сервер
+      if (allowlist.some((a) => origin.startsWith(a))) return cb(null, true);
+      if (previewRegex.test(origin)) return cb(null, true); // превью нетлифи
+      return cb(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+  })
+);
+app.options('*', cors());
+
+console.log('[cors] allowlist =', allowlist, 'previewRegex =', true);
 
 // ───────────────────────────────────────────────────────────
-// Helpers: подпись, токены
+// Хелперы подписи/токена
 const signHmac = (secret, data) =>
   crypto.createHmac('sha256', secret).update(data).digest('hex');
 
 function makeSignedToken(payloadObj) {
-  const secret = process.env.WEBHOOK_SECRET || 'devsecret';
+  const secret = WEBHOOK_SECRET || 'devsecret';
   const body = JSON.stringify(payloadObj);
   const sig = signHmac(secret, body);
   const b64 = Buffer.from(body).toString('base64url');
@@ -50,7 +106,7 @@ function makeSignedToken(payloadObj) {
 }
 
 function verifySignedToken(token) {
-  const secret = process.env.WEBHOOK_SECRET || 'devsecret';
+  const secret = WEBHOOK_SECRET || 'devsecret';
   const [sig, b64] = (token || '').split('.');
   if (!sig || !b64) return null;
   const body = Buffer.from(b64, 'base64url').toString();
@@ -65,7 +121,7 @@ function verifySignedToken(token) {
 
 // Проверка подписи initData Telegram Web App
 function verifyTgInitData(initData, botToken) {
-  const pairs = (initData || '').split('&').map(p => p.split('='));
+  const pairs = (initData || '').split('&').map((p) => p.split('='));
   const data = Object.fromEntries(
     pairs
       .filter(([k]) => k)
@@ -77,62 +133,31 @@ function verifyTgInitData(initData, botToken) {
 
   const checkString = Object.keys(data)
     .sort()
-    .map(k => `${k}=${data[k]}`)
+    .map((k) => `${k}=${data[k]}`)
     .join('\n');
 
-  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(botToken).digest();
-  const calcHash = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
+  const secretKey = crypto
+    .createHmac('sha256', 'WebAppData')
+    .update(botToken)
+    .digest();
+  const calcHash = crypto
+    .createHmac('sha256', secretKey)
+    .update(checkString)
+    .digest('hex');
 
   const ok =
     providedHash &&
-    crypto.timingSafeEqual(Buffer.from(calcHash, 'hex'), Buffer.from(providedHash, 'hex'));
+    crypto.timingSafeEqual(
+      Buffer.from(calcHash, 'hex'),
+      Buffer.from(providedHash, 'hex')
+    );
 
   return { ok: !!ok, data };
 }
 
 // ───────────────────────────────────────────────────────────
-// App
-const app = express();
-
-// простой лог входящих
-app.use((req, _res, next) => {
-  const origin = req.headers.origin || '-';
-  console.log(`[hit] ${new Date().toISOString()} ${req.method} ${req.originalUrl} origin=${origin}`);
-  next();
-});
-
-// JSON парсер
-app.use(express.json());
-
-// CORS allowlist (+ Netlify preview wildcard)
-const allowlist = FRONTEND_ORIGINS.split(',')
-  .map(s => s.trim())
-  .filter(Boolean)
-  .concat(['http://localhost:5173']);
-
-const previewRegex = /^https:\/\/[a-z0-9-]+--[a-z0-9-]+\.netlify\.app$/i;
-
-console.log('[cors] allowlist =', allowlist, 'previewRegex =', !!previewRegex);
-
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // curl/server-server
-      const ok =
-        allowlist.some(a => origin.startsWith(a)) ||
-        previewRegex.test(origin);
-      return ok ? cb(null, true) : cb(new Error('Not allowed by CORS'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false,
-  })
-);
-app.options('*', cors());
-
-// ───────────────────────────────────────────────────────────
 // Health / Ping
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', (req, res) => res.json({ ok: true }));
 
 app.get('/api/twa/ping', (req, res) => {
   const from = req.query.from || 'unknown';
@@ -143,7 +168,7 @@ app.get('/api/twa/ping', (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────
-// Авторизация из Telegram WebApp
+// Авторизация WebApp
 app.post('/api/twa/auth', async (req, res) => {
   try {
     const { initData } = req.body || {};
@@ -152,11 +177,9 @@ app.post('/api/twa/auth', async (req, res) => {
       len: req.headers['content-length'] || '0',
       origin: req.headers.origin || '-',
     });
-    if (!initData) {
-      return res.status(400).json({ ok: false, error: 'no initData' });
-    }
+    if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
 
-    let verified = { ok: false, data: {} };
+    let verified;
     if (SKIP_TWA_VERIFY === '1') {
       verified = {
         ok: true,
@@ -169,9 +192,7 @@ app.post('/api/twa/auth', async (req, res) => {
       verified = verifyTgInitData(initData, BOT_TOKEN);
     }
 
-    if (!verified.ok) {
-      return res.status(401).json({ ok: false, error: 'bad signature' });
-    }
+    if (!verified.ok) return res.status(401).json({ ok: false, error: 'bad signature' });
 
     const user = JSON.parse(verified.data.user || '{}');
     console.log('[auth ok*]', {
@@ -179,8 +200,6 @@ app.post('/api/twa/auth', async (req, res) => {
       username: user.username || null,
       first_name: user.first_name || null,
     });
-
-    // Сюда можно добавить запись/обновление пользователя в БД
 
     const payload = { id: user.id, username: user.username || null, ts: Date.now() };
     const token = makeSignedToken(payload);
@@ -197,21 +216,20 @@ app.post('/api/twa/auth', async (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────
-// Логирование событий с фронта → Supabase (если настроен)
+// Логи с фронта
 app.post('/api/logs', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
     const token = auth.replace(/^Bearer\s+/i, '');
     const payload = verifySignedToken(token);
-    if (!payload) {
-      return res.status(401).json({ ok: false, error: 'bad token' });
-    }
+    if (!payload) return res.status(401).json({ ok: false, error: 'bad token' });
 
     const { type, message = null, extra = null } = req.body || {};
+    console.log('[log]', payload.id, type, message, extra);
 
-    if (supa) {
+    if (supabase) {
       try {
-        await supa.from('logs').insert({
+        await supabase.from('logs').insert({
           user_id: payload.id,
           type,
           message,
@@ -221,8 +239,6 @@ app.post('/api/logs', async (req, res) => {
       } catch (e) {
         console.warn('[log->db failed]', e.message);
       }
-    } else {
-      console.log('[log]', payload.id, type, message, extra);
     }
 
     return res.json({ ok: true });
@@ -232,7 +248,7 @@ app.post('/api/logs', async (req, res) => {
   }
 });
 
-// Вспомогательный: посмотреть токен
+// Вспомогательный эндпойнт для отладки токена
 app.get('/api/whoami', (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -246,7 +262,7 @@ app.get('/api/whoami', (req, res) => {
 });
 
 // ───────────────────────────────────────────────────────────
-// Подключаем ваши API-роуты
+// Твои API-роуты
 app.use('/api', api);
 app.use('/api', addonRoutes);
 
@@ -263,14 +279,21 @@ app.use(`/tg/${secret}`, (req, res, next) => {
   next();
 });
 
-app.get(`/tg/${secret}`, (_req, res) => res.status(200).send('OK'));
-
+app.get(`/tg/${secret}`, (req, res) => res.status(200).send('OK'));
 app.use(`/tg/${secret}`, webhookCallback);
 
 // ───────────────────────────────────────────────────────────
 // Старт
 app.listen(PORT, async () => {
   console.log('[server] listening on', PORT, 'APP_URL=', APP_URL || '(not set)');
+  console.log('[env check] FRONTEND_ORIGIN=', FRONTEND_ORIGIN || '(empty)');
+  console.log(
+    '[env check] SUPABASE_URL set =',
+    Boolean(SUPABASE_URL),
+    ', SERVICE_KEY set =',
+    Boolean(SUPABASE_SERVICE_KEY)
+  );
+
   if (APP_URL) {
     try {
       const url = `${APP_URL}/tg/${secret}`;
@@ -280,6 +303,6 @@ app.listen(PORT, async () => {
       console.error('[webhook] failed:', e.message);
     }
   } else {
-    console.log('[webhook] APP_URL is not set yet. Set it in Railway Vars.');
+    console.log('[webhook] APP_URL is not set yet.');
   }
 });
