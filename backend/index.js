@@ -233,23 +233,28 @@ app.post('/api/twa/auth', async (req, res) => {
       username: user.username || null,
       first_name: user.first_name || null,
     });
-// ⬇️ Сохраняем/обновляем пользователя в Supabase
+// апсерт пользователя в таблицу users
 if (supa) {
   try {
-    await supa.from('users')
-      .upsert({
-        user_id: user.id,
-        username: user.username || null,
-        first_name: user.first_name || null,
-        last_name: user.last_name || null,
-        photo_url: user.photo_url || null,
-        lang_code: user.language_code || null,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'user_id' });
+    const upsertData = {
+      id: user.id,
+      username: user.username || null,
+      first_name: user.first_name || null,
+      last_name: user.last_name || null,
+      photo_url: user.photo_url || null,
+    };
 
-    console.log('[users->db upsert]', user.id, user.username || null);
+    const { error } = await supa
+      .from('users')
+      .upsert(upsertData, { onConflict: 'id' });
+
+    if (error) {
+      console.warn('[users upsert failed]', error.message);
+    } else {
+      console.log('[users upsert ok]', user.id);
+    }
   } catch (e) {
-    console.warn('[users->db failed]', e.message);
+    console.warn('[users upsert exception]', e.message);
   }
 }
 
