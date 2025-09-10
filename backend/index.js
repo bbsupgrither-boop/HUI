@@ -148,22 +148,36 @@ app.post('/api/diag/db', async (req, res) => {
     if (!supa) {
       return res.status(500).json({ ok: false, error: 'supa client is not configured' });
     }
-    const { type = 'diag', message = 'manual test', extra = null } = req.body || {};
+    // добавили level с дефолтом 'info'
+    const {
+      type = 'diag',
+      message = 'manual test',
+      extra = null,
+      level = 'info',
+    } = req.body || {};
+
     const { error } = await supa
       .from('logs')
-      .insert({ user_id: 0, type, message, extra });
+      .insert({
+        user_id: 0,
+        type,
+        message,
+        extra,
+        level,      // <-- ВАЖНО: теперь пишем level
+      });
 
     if (error) {
       console.warn('[diag/db failed]', error.message);
       return res.status(500).json({ ok: false, error: error.message });
     }
-    console.log('[diag/db] inserted test row (type=%s)', type);
+    console.log('[diag/db] inserted test row (type=%s, level=%s)', type, level);
     return res.json({ ok: true, inserted: true });
   } catch (e) {
     console.error('[diag/db error]', e);
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
+
 
 
 app.get('/api/twa/ping', (req, res) => {
