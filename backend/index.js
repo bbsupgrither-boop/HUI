@@ -194,6 +194,25 @@ app.post('/api/twa/auth', async (req, res) => {
       username: user.username || null,
       first_name: user.first_name || null,
     });
+// ⬇️ Сохраняем/обновляем пользователя в Supabase
+if (supa) {
+  try {
+    await supa.from('users')
+      .upsert({
+        user_id: user.id,
+        username: user.username || null,
+        first_name: user.first_name || null,
+        last_name: user.last_name || null,
+        photo_url: user.photo_url || null,
+        lang_code: user.language_code || null,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+
+    console.log('[users->db upsert]', user.id, user.username || null);
+  } catch (e) {
+    console.warn('[users->db failed]', e.message);
+  }
+}
 
     // Пишем лог «auth» в Supabase (если настроен)
     if (supa) {
