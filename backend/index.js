@@ -142,6 +142,30 @@ app.options('*', cors());
 // Health / Ping / Diag
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// ТЕСТОВЫЙ эндпоинт для проверки записи в Supabase
+app.post('/api/diag/db', async (req, res) => {
+  try {
+    if (!supa) {
+      return res.status(500).json({ ok: false, error: 'supa client is not configured' });
+    }
+    const { type = 'diag', message = 'manual test', extra = null } = req.body || {};
+    const { error } = await supa
+      .from('logs')
+      .insert({ user_id: 0, type, message, extra });
+
+    if (error) {
+      console.warn('[diag/db failed]', error.message);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+    console.log('[diag/db] inserted test row (type=%s)', type);
+    return res.json({ ok: true, inserted: true });
+  } catch (e) {
+    console.error('[diag/db error]', e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
+
 app.get('/api/twa/ping', (req, res) => {
   const from = req.query.from || 'unknown';
   const wa = req.query.wa || '-';
