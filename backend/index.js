@@ -159,6 +159,17 @@ function verifyTgInitData(initData, botToken) {
 // Health / Ping
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// === DIAG: показать, видит ли процесс ключевые переменные окружения ===
+app.get('/api/diag/env', (req, res) => {
+  res.json({
+    ok: true,
+    SUPABASE_URL: process.env.SUPABASE_URL || null,
+    SUPABASE_SERVICE_ROLE: process.env.SUPABASE_SERVICE_ROLE ? '***set***' : null,
+    FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN || null,
+  });
+});
+
+
 app.get('/api/twa/ping', (req, res) => {
   const from = req.query.from || 'unknown';
   const wa = req.query.wa || '-';
