@@ -257,7 +257,23 @@ app.post('/api/logs', async (req, res) => {
     const payload = verifySignedToken(token)
     if (!payload) return res.status(401).json({ ok: false, error: 'bad token' })
 
-    const { type, message = null, extra = null } = req.body || {}
+    // СТАНЕТ:
+const { type, message = null, extra = null, level = 'info' } = req.body || {};
+
+try {
+  await supa
+    .from('logs')
+    .insert({
+      user_id: payload.id,
+      type,
+      message,
+      extra,
+      level,           // <-- добавили
+    });
+  console.log('[log->db]', payload.id, type, message, level);
+} catch (e) {
+  console.warn('[log->db failed]', e.message);
+}
     console.log('[log]', payload.id, type, message, extra)
 
     if (supa) {
