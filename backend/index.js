@@ -242,6 +242,8 @@ if (supabase) {
 
 // ───────────────────────────────────────────────────────────
 // Логи с фронта
+// ───────────────────────────────────────────────────────────
+// Лёгкий логгер событий с фронта (требует Authorization: Bearer <token>)
 app.post('/api/logs', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -249,21 +251,57 @@ app.post('/api/logs', async (req, res) => {
     const payload = verifySignedToken(token);
     if (!payload) return res.status(401).json({ ok: false, error: 'bad token' });
 
-    const { type, message = null, extra = null } = req.body || {};
-    console.log('[log]', payload.id, type, message, extra);
+    // Принимаем оба варианта тела:
+    // 1) { type, message, extra }
+    // 2) { level, message, context }
+    const {
+      type = null,
+      level: levelRaw = null,
+      message = null,
+      extra = null,
+      context: contextRaw = null,
+    } = req.body || {};
 
-    if (supabase) {
+    const level = (levelRaw || type || 'info').toString();
+
+    // Собираем context (jsonb) — объединяем присланный extra/context с тех.метаданными
+    const context =
+      (contextRaw && typeof contextRaw === 'object' ? contextRaw : {}) ||
+      (extra && typeof extra === 'object' ? extra : {}) || {};
+
+    const mergedContext = {
+      ...context,
+      user_id: payload.id,
+      username: payload.username || null,
+      ua: req.headers['user-agent'] || null,
+      ip: req.headers['x-forwarded-for'] || req.ip || null,
+    };
+
+    console.log('[log]', payload.id, level, message);
+
+    // Если Supabase настроен — пишем в БД
+    if (supa) {
       try {
-        await supabase.from('logs').insert({
-          user_id: payload.id,
-          type,
-          message,
-          extra,
-        });
-        console.log('[log->db]', payload.id, type, message);
+        const { error, data } = await supa
+          .from('logs')
+          .insert({
+            level,
+            message,
+            context: mergedContext,
+          })
+          .select('id')
+          .single();
+
+        if (error) {
+          console.warn('[log->db failed]', error.message);
+        } else {
+          console.log('[log->db] inserted id=', data?.id);
+        }
       } catch (e) {
         console.warn('[log->db failed]', e.message);
       }
+    } else {
+      console.warn('[log->db] skipped: supa client is not initialized');
     }
 
     return res.json({ ok: true });
@@ -272,6 +310,7 @@ app.post('/api/logs', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
+
 
 // Вспомогательный эндпойнт для отладки токена
 app.get('/api/whoami', (req, res) => {
