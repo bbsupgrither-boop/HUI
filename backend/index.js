@@ -178,18 +178,19 @@ const supa = createClient(
 
 // ───────────────────────────────────────────────────────────
 // Авторизация WebApp: принимает initData, проверяет подпись, выдаёт токен
-// Лёгкий логгер событий с фронта (требует Authorization: Bearer <token>)
+// ЛЁГКИЙ ЛОГГЕР СОБЫТИЙ С ФРОНТА
 app.post('/api/logs', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
     const token = auth.replace(/^Bearer\s+/i, '');
-    const payload = verifySignedToken(token); // эта функция уже есть выше в файле
-    if (!payload) return res.status(401).json({ ok: false, error: 'bad token' });
+    const payload = verifySignedToken(token);
+    if (!payload) {
+      return res.status(401).json({ ok: false, error: 'bad token' });
+    }
 
     const { type, message = null, extra = null } = req.body || {};
-    console.log('[log]', payload.id, type, message, extra);
 
-    // === ВСТАВЛЕННАЯ ЧАСТЬ: запись в Supabase ===
+    // запись в Supabase
     try {
       await supa
         .from('logs')
@@ -197,14 +198,12 @@ app.post('/api/logs', async (req, res) => {
           user_id: payload.id,
           type,
           message,
-          extra
+          extra,
         });
       console.log('[log->db]', payload.id, type, message);
     } catch (e) {
       console.warn('[log->db failed]', e.message);
-      // не роняем ответ клиенту — лог просто не записался в БД
     }
-    // ============================================
 
     return res.json({ ok: true });
   } catch (e) {
@@ -212,6 +211,7 @@ app.post('/api/logs', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
+
 
 
     // здесь можно сохранить/обновить пользователя в БД
