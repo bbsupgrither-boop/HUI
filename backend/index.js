@@ -212,75 +212,58 @@ app.post('/api/twa/auth', async (req, res) => {
     });
     if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
 
-    let verified = { ok: false, data: {} };
-    if (SKIP_TWA_VERIFY === '1') {
-      verified = {
-        ok: true,
-        data: {
-          user: JSON.stringify({ id: 999, username: null, first_name: 'CLI' }),
-        },
-      };
-      console.log('[auth] signature check SKIPPED (diag mode)');
-    } else {
-      verified = verifyTgInitData(initData, BOT_TOKEN);
+    // 1) проверка подписи
+    let verified = verifyTgInitData(initData, BOT_TOKEN);
+    if (!verified.ok) {
+      return res.status(401).json({ ok: false, error: 'bad signature' });
     }
 
-    if (!verified.ok) return res.status(401).json({ ok: false, error: 'bad signature' });
-
-    const user = JSON.parse(verified.data.user || '{}');
+    // 2) пользователь из initData
+    const tgUser = JSON.parse(verified.data.user || '{}');
     console.log('[auth ok*]', {
-      id: user.id,
-      username: user.username || null,
-      first_name: user.first_name || null,
+      id: tgUser.id,
+      username: tgUser.username || null,
+      first_name: tgUser.first_name || null,
     });
-// апсерт пользователя в таблицу users
-if (supa) {
-  try {
-    const upsertData = {
-      id: user.id,
-      username: user.username || null,
-      first_name: user.first_name || null,
-      last_name: user.last_name || null,
-      photo_url: user.photo_url || null,
-    };
 
-    const { error } = await supa
-      .from('users')
-      .upsert(upsertData, { onConflict: 'id' });
+    // 3) простая «сессия»: подписанный токен
+    const payload = { id: tgUser.id, username: tgUser.username || null, ts: Date.now() };
+    const token = makeSignedToken(payload);
 
-    if (error) {
-      console.warn('[users upsert failed]', error.message);
-    } else {
-      console.log('[users upsert ok]', user.id);
-    }
-  } catch (e) {
-    console.warn('[users upsert exception]', e.message);
-  }
-}
-
-    // Пишем лог «auth» в Supabase (если настроен)
+    // 4) безопасно пишем в БД (если supa сконфигурен)
     if (supa) {
       try {
+        // users (опционально, если есть таблица)
+        await supa
+          .from('users')
+          .upsert({
+            id: tgUser.id,
+            username: tgUser.username ?? null,
+            first_name: tgUser.first_name ?? null,
+            last_name: tgUser.last_name ?? null,
+            photo_url: tgUser.photo_url ?? null,
+            updated_at: new Date().toISOString(),
+          });
+
+        // лог авторизации
         await supa.from('logs').insert({
-          user_id: user.id,
+          user_id: tgUser.id,
           type: 'auth',
-          message: 'auth ok',
-          extra: { username: user.username || null },
-          level: 'info', // обязательно
+          level: 'info',        // важно: колонка level NOT NULL
+          message: 'twa auth ok',
+          extra: null,
         });
-        console.log('[auth->db] inserted for', user.id);
+        console.log('[auth->db] inserted for', tgUser.id);
       } catch (e) {
         console.warn('[auth->db failed]', e.message);
+        // не падаем, просто логируем
       }
     }
 
-    // Простейшая «сессия» — подписанный токен
-    const payload = { id: user.id, username: user.username || null, ts: Date.now() };
-    const token = makeSignedToken(payload);
-
+    // 5) ответ фронту
     return res.json({
       ok: true,
-      me: { id: user.id, name: user.first_name, username: user.username || null },
+      me: { id: tgUser.id, name: tgUser.first_name, username: tgUser.username || null },
       token,
     });
   } catch (e) {
@@ -288,6 +271,7 @@ if (supa) {
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
+
 
 // Logs endpoint (с фронта)
 app.post('/api/logs', async (req, res) => {
