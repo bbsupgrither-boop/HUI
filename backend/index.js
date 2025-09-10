@@ -18,6 +18,28 @@ const {
   PORT = 3000,
 } = process.env;
 
+// ── Supabase client (глобально) ─────────────────────────────
+import { createClient } from '@supabase/supabase-js'
+
+const {
+  SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE,   // service role ключ
+} = process.env
+
+// создаём клиент, если все переменные есть
+const supa = (SUPABASE_URL && SUPABASE_SERVICE_ROLE)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null
+
+if (!supa) {
+  console.warn('[WARN] Supabase vars are not set — /api/logs и /api/diag/db пропустят вставку')
+} else {
+  console.log('[supa] client initialized')
+}
+
+
 // имена переменных для фронта: поддержим оба
 const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS || '';
