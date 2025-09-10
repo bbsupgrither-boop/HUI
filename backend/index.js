@@ -170,6 +170,20 @@ app.get('/api/twa/ping', (req, res) => {
 // ───────────────────────────────────────────────────────────
 // Авторизация WebApp
 app.post('/api/twa/auth', async (req, res) => {
+// контрольная запись в Supabase — помечаем успешную авторизацию
+if (supabase) {
+  try {
+    await supabase.from('logs').insert({
+      user_id: user.id,
+      type: 'auth',
+      message: 'twa auth ok',
+      extra: { username: user.username || null }
+    });
+    console.log('[auth->db] inserted for', user.id);
+  } catch (e) {
+    console.warn('[auth->db failed]', e.message);
+  }
+}
   try {
     const { initData } = req.body || {};
     console.log('[auth HIT]', {
