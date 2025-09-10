@@ -10,23 +10,21 @@ import { router as api } from './src/routes.js';
 import { addon as addonRoutes } from './src/routes.addon.js';
 
 // ───────────────────────────────────────────────────────────
-// ENV
 const {
   BOT_TOKEN,
   WEBHOOK_SECRET = 'hook',
   APP_URL,
+  FRONTEND_ORIGINS = '',
   PORT = 3000,
-} = process.env;
-
-// ── Supabase client (глобально) ─────────────────────────────
-import { createClient } from '@supabase/supabase-js'
-
-const {
+  SKIP_TWA_VERIFY,
+  // ← добавили сюда, чтобы не объявлять отдельно
   SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE,   // service role ключ
+  SUPABASE_SERVICE_ROLE,
 } = process.env
 
-// создаём клиент, если все переменные есть
+import { createClient } from '@supabase/supabase-js'
+
+// Глобальный клиент Supabase
 const supa = (SUPABASE_URL && SUPABASE_SERVICE_ROLE)
   ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -44,10 +42,6 @@ if (!supa) {
 const FRONTEND_ORIGIN =
   process.env.FRONTEND_ORIGIN || process.env.FRONTEND_ORIGINS || '';
 
-// Supabase: поддержим оба имени ключа
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_KEY || '';
 
 // безопасный флаг для диагностики
 const SKIP_TWA_VERIFY = process.env.SKIP_TWA_VERIFY;
