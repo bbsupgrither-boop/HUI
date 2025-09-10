@@ -1,5 +1,6 @@
 // index.js — прод-версия (ESM) с CORS и TWA-авторизацией
 
+
 import express from 'express'
 import cors from 'cors'
 import crypto from 'node:crypto'
@@ -172,7 +173,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supa = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 // ───────────────────────────────────────────────────────────
