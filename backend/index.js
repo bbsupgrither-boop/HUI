@@ -168,64 +168,49 @@ app.get('/api/twa/ping', (req, res) => {
   res.json({ ok: true })
 })
 
+import { createClient } from '@supabase/supabase-js';
+
+const supa = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
+
 // ───────────────────────────────────────────────────────────
 // Авторизация WebApp: принимает initData, проверяет подпись, выдаёт токен
-app.post('/api/twa/auth', async (req, res) => {
+// Лёгкий логгер событий с фронта (требует Authorization: Bearer <token>)
+app.post('/api/logs', async (req, res) => {
   try {
-    const { initData } = req.body || {}
-    console.log('[auth HIT]', {
-      hasBody: !!req.body,
-      len: req.headers['content-length'] || '0',
-      origin: req.headers.origin || '-'
-    })
-    if (!initData) return res.status(400).json({ ok: false, error: 'no initData' })
+    const auth = req.headers.authorization || '';
+    const token = auth.replace(/^Bearer\s+/i, '');
+    const payload = verifySignedToken(token); // эта функция уже есть выше в файле
+    if (!payload) return res.status(401).json({ ok: false, error: 'bad token' });
 
-    let verified
-    if (SKIP_TWA_VERIFY === '1') {
-      // только для диагностики (НЕ оставляй в проде!)
-      verified = { ok: true, data: { user: JSON.stringify({ id: 999, username: null, first_name: 'CLI' }) } }
-      console.log('[auth] signature check SKIPPED (diag mode)')
-    } else {
-      verified = verifyTgInitData(initData, BOT_TOKEN)
+    const { type, message = null, extra = null } = req.body || {};
+    console.log('[log]', payload.id, type, message, extra);
+
+    // === ВСТАВЛЕННАЯ ЧАСТЬ: запись в Supabase ===
+    try {
+      await supa
+        .from('logs')
+        .insert({
+          user_id: payload.id,
+          type,
+          message,
+          extra
+        });
+      console.log('[log->db]', payload.id, type, message);
+    } catch (e) {
+      console.warn('[log->db failed]', e.message);
+      // не роняем ответ клиенту — лог просто не записался в БД
     }
+    // ============================================
 
-    if (!verified.ok) return res.status(401).json({ ok: false, error: 'bad signature' })
-
-    // user — строка JSON в initData
-    const user = JSON.parse(verified.data.user || '{}')
-    console.log('[auth ok*]', {
-      id: user.id,
-      username: user.username || null,
-      first_name: user.first_name || null
-    })
-    // — после: const user = JSON.parse(verified.data.user || '{}')
-try {
-  await supa
-    .from('users')
-    .upsert({
-      id: user.id,                        // BIGINT PK
-      username: user.username || null,
-      first_name: user.first_name || null,
-      last_name: user.last_name || null,
-      photo_url: user.photo_url || null,
-      last_seen: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'id' });
-
-  // Не обязательно, но полезно — первичный "open" лог:
-  await supa
-    .from('logs')
-    .insert({
-      user_id: user.id,
-      type: 'auth',
-      message: 'webapp auth ok',
-      extra: { via: 'twa' }
-    });
-
-  console.log('[supabase] users upsert + auth log ok');
-} catch (e) {
-  console.warn('[supabase] users upsert/log failed', e.message);
-}
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('log error', e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
 
 
     // здесь можно сохранить/обновить пользователя в БД
