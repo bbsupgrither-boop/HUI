@@ -180,38 +180,7 @@ app.post('/api/logs', async (req, res) => {
   }
 });
 
-
-app.get('/api/twa/ping', (req, res) => {
-  const from = req.query.from || 'unknown';
-  const wa = req.query.wa || '-';
-  const init = req.query.init || '-';
-  console.log(`[ping] from=${from} wa=${wa} init=${init}`);
-  res.json({ ok: true });
-});
-
-app.get('/api/diag/env', (req, res) => {
-  res.json({
-    ok: true,
-    SUPABASE_URL: SUPABASE_URL ? '***set***' : '',
-    SUPABASE_SERVICE_ROLE: SUPABASE_SERVICE_ROLE ? '***set***' : '',
-    FRONTEND_ORIGIN: FRONTEND_ORIGIN || '',
-    FRONTEND_ORIGINS: FRONTEND_ORIGINS || '',
-    APP_URL: APP_URL || '',
-  });
-});
-
-// ───────────────────────────────────────────────────────────
-// WebApp auth
-app.post('/api/twa/auth', async (req, res) => {
-  try {
-    const { initData } = req.body || {};
-    console.log('[auth HIT]', {
-      hasBody: !!req.body,
-      len: req.headers['content-length'] || '0',
-      origin: req.headers.origin || '-',
-    });
-    
-    // ВХОД В АДМИН-ПАНЕЛЬ
+// ВХОД В АДМИН-ПАНЕЛЬ
 app.post('/api/admin/login', async (req, res) => {
   try {
     const { tg_user_id, password } = req.body || {};
@@ -259,7 +228,36 @@ app.post('/api/admin/login', async (req, res) => {
   }
 });
 
-    
+app.get('/api/twa/ping', (req, res) => {
+  const from = req.query.from || 'unknown';
+  const wa = req.query.wa || '-';
+  const init = req.query.init || '-';
+  console.log(`[ping] from=${from} wa=${wa} init=${init}`);
+  res.json({ ok: true });
+});
+
+app.get('/api/diag/env', (req, res) => {
+  res.json({
+    ok: true,
+    SUPABASE_URL: SUPABASE_URL ? '***set***' : '',
+    SUPABASE_SERVICE_ROLE: SUPABASE_SERVICE_ROLE ? '***set***' : '',
+    FRONTEND_ORIGIN: FRONTEND_ORIGIN || '',
+    FRONTEND_ORIGINS: FRONTEND_ORIGINS || '',
+    APP_URL: APP_URL || '',
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// WebApp auth
+app.post('/api/twa/auth', async (req, res) => {
+  try {
+    const { initData } = req.body || {};
+    console.log('[auth HIT]', {
+      hasBody: !!req.body,
+      len: req.headers['content-length'] || '0',
+      origin: req.headers.origin || '-',
+    });
+
     if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
 
     // 1) проверка подписи
