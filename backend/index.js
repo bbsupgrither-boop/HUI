@@ -210,6 +210,56 @@ app.post('/api/twa/auth', async (req, res) => {
       len: req.headers['content-length'] || '0',
       origin: req.headers.origin || '-',
     });
+    
+    // ВХОД В АДМИН-ПАНЕЛЬ
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { tg_user_id, password } = req.body || {};
+    const idNum = typeof tg_user_id === 'string' ? parseInt(tg_user_id, 10) : tg_user_id;
+    if (!idNum || !password) {
+      return res.status(400).json({ ok: false, error: 'need tg_user_id and password' });
+    }
+
+    // проверяем через функцию в базе (мы её уже создали)
+    const { data, error } = await supa.rpc('admin_check_password', {
+      p_tg_user_id: idNum,
+      p_password: password,
+    });
+    if (error) {
+      console.error('[admin_login] db error:', error);
+      return res.status(500).json({ ok: false, error: 'db_error' });
+    }
+
+    const row = Array.isArray(data) ? data[0] : null;
+    if (!row || !row.ok) {
+      return res.status(401).json({ ok: false, error: 'bad_credentials' });
+    }
+
+    // делаем админ-токен (используйте вашу функцию подписи)
+    const adminPayload = { admin_id: idNum, role: row.role, ts: Date.now(), scope: 'admin' };
+    const admin_token = makeSignedToken(adminPayload);
+
+    // (опционально) лог в таблицу logs
+    try {
+      await supa.from('logs').insert({
+        user_id: idNum,
+        type: 'admin_login',
+        level: 'info',
+        message: 'admin login ok',
+        extra: { role: row.role },
+      });
+    } catch (e) {
+      console.warn('[admin_login] log skip:', e?.message);
+    }
+
+    return res.json({ ok: true, role: row.role, token: admin_token });
+  } catch (e) {
+    console.error('[admin_login] error:', e);
+    return res.status(500).json({ ok: false, error: 'server' });
+  }
+});
+
+    
     if (!initData) return res.status(400).json({ ok: false, error: 'no initData' });
 
     // 1) проверка подписи
