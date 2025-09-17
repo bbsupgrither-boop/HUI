@@ -234,16 +234,13 @@ app.post('/api/twa/auth', async (req, res) => {
     if (supa) {
       try {
         // users (опционально, если есть таблица)
-        await supa
-          .from('users')
-          .upsert({
-            id: tgUser.id,
-            username: tgUser.username ?? null,
-            first_name: tgUser.first_name ?? null,
-            last_name: tgUser.last_name ?? null,
-            photo_url: tgUser.photo_url ?? null,
-            updated_at: new Date().toISOString(),
-          });
+        // создаём/обновляем пользователя одной «кнопкой»
+       await supa.rpc('users_touch_login', {
+          p_user: tgUser,                                   // весь объект user из Telegram
+          p_platform: req.headers['x-telegram-platform'] || 'unknown',
+          p_app_version: req.headers['x-telegram-version'] || 'unknown'
+});
+
 
         // лог авторизации
         await supa.from('logs').insert({
@@ -271,6 +268,7 @@ app.post('/api/twa/auth', async (req, res) => {
     return res.status(500).json({ ok: false, error: 'server' });
   }
 });
+
 
 
 // Logs endpoint (с фронта)
